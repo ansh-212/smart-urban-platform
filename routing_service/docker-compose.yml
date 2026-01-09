@@ -1,0 +1,15 @@
+services:
+  graphhopper:
+    image: israelhikingmap/graphhopper:latest
+    container_name: urban_routing
+    ports:
+      - "8989:8989"
+    volumes:
+      - ./graph-cache:/graphhopper/graph-cache  # Persists the built graph
+    environment:
+      # Increase memory for larger maps
+      - JAVA_OPTS=-Xmx2g -Xms2g
+    command: >
+      --url https://download.geofabrik.de/north-america/us/california/norcal-latest.osm.pbf
+      --host 0.0.0.0
+    restart: unless-stopped

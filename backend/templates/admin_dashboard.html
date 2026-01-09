@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urban Monitoring - Admin Dashboard</title>
+
+    <!-- External Libraries -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f8f9fa;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 2rem;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border-left: 4px solid #667eea;
+        }
+
+        .metric-card.danger { border-left-color: #ff4757; }
+        .metric-card.success { border-left-color: #2ecc71; }
+        .metric-card.warning { border-left-color: #ffa502; }
+        .metric-card.info { border-left-color: #3742fa; }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .metric-label {
+            color: #666;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+
+        .metric-trend {
+            font-size: 0.8rem;
+            margin-top: 0.3rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            background: #e8f5e8;
+            color: #2ecc71;
+            display: inline-block;
+        }
+
+        .metric-trend.negative {
+            background: #ffe8e8;
+            color: #ff4757;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .chart-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .chart-card h3 {
+            margin-bottom: 1rem;
+            color: #333;
+        }
+
+        .map-section {
+            background: white;
+            border-radius: 10px;
+            padding: 1rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        #admin-map {
+            height: 400px;
+            border-radius: 5px;
+        }
+
+        .controls-bar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-success {
+            background: #2ecc71;
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+
+        .status-online { background: #2ecc71; }
+        .status-offline { background: #ff4757; }
+
+        @media (max-width: 768px) {
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .container {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>🏛️ Urban Monitoring Control Center</h1>
+    <div class="header-stats">
+        <span><span class="status-indicator status-online"></span>System Status: Operational</span>
+        <span>Last Updated: <span id="lastUpdate">--</span></span>
+        <span>Connected Users: <span id="connectedUsers">--</span></span>
+    </div>
+</div>
+
+<div class="container">
+    <!-- Real-time Metrics -->
+    <div class="metrics-grid" id="metricsGrid">
+        <!-- Metrics will be populated by JavaScript -->
+    </div>
+
+    <!-- Interactive Map -->
+    <div class="map-section">
+        <h3>🗺️ Live Monitoring Map</h3>
+        <div class="controls-bar">
+            <button class="btn btn-primary" onclick="toggleHeatMap()">Toggle Hazard Heatmap</button>
+            <button class="btn btn-primary" onclick="toggleVehicles()">Toggle Live Vehicles</button>
+            <button class="btn btn-success" onclick="refreshData()">Force Refresh</button>
+        </div>
+        <div id="admin-map"></div>
+    </div>
+
+    <!-- Charts Dashboard -->
+    <div class="charts-grid">
+        <div class="chart-card">
+            <h3>📈 Hazard Trends</h3>
+            <div id="hazardTrendChart"></div>
+        </div>
+
+        <div class="chart-card">
+            <h3>⚠️ Severity Distribution</h3>
+            <div id="severityChart"></div>
+        </div>
+
+        <div class="chart-card">
+            <h3>🕐 Hourly Activity</h3>
+            <div id="hourlyChart"></div>
+        </div>
+
+        <div class="chart-card">
+            <h3>🅿️ Parking Utilization</h3>
+            <div id="parkingChart"></div>
+        </div>
+
+        <div class="chart-card">
+            <h3>⏱️ Response Times</h3>
+            <div id="responseTimeChart"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Initialize WebSocket connection
+    const socket = io('http://localhost:5000');
+
+    // Initialize map
+    const map = L.map('admin-map').setView([37.7749, -122.4194], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    // Layer groups
+    const layers = {
+        hazards: L.layerGroup().addTo(map),
+        vehicles: L.layerGroup(),
+        heatmap: L.layerGroup()
+    };
+
+    let heatmapVisible = false;
+    let vehiclesVisible = false;
+
+    // Update functions
+    function updateMetrics(metrics) {
+        const grid = document.getElementById('metricsGrid');
+
+        if (!metrics) return;
+
+        const metricCards = Object.entries(metrics).map(([key, data]) => {
+            if (!data) return '';
+
+            const trendClass = data.trend && data.trend.startsWith('-') ? 'negative' : '';
+            const cardClass = key.includes('hazard') ? 'danger' :
+                key.includes('parking') ? 'success' :
+                    key.includes('response') ? 'warning' : 'info';
+
+            return `
+                    <div class="metric-card ${cardClass}">
+                        <div class="metric-value">${data.value}</div>
+                        <div class="metric-label">${data.label}</div>
+                        ${data.trend ? `<div class="metric-trend ${trendClass}">${data.trend}</div>` : ''}
+                    </div>
+                `;
+        }).join('');
+
+        grid.innerHTML = metricCards;
+    }
+
+    function updateCharts() {
+        fetch('http://localhost:5000/api/analytics/charts')
+            .then(r => r.json())
+            .then(data => {
+                Plotly.react('hazardTrendChart', JSON.parse(data.hazard_trend));
+                Plotly.react('severityChart', JSON.parse(data.severity_pie));
+                Plotly.react('hourlyChart', JSON.parse(data.hourly_activity));
+                Plotly.react('parkingChart', JSON.parse(data.parking_utilization));
+                Plotly.react('responseTimeChart', JSON.parse(data.response_time));
+            })
+            .catch(e => console.error('Chart update error:', e));
+    }
+
+    function updateHazards(hazards) {
+        layers.hazards.clearLayers();
+
+        hazards.forEach(hazard => {
+            const color = hazard.severity === 'high' ? '#ff4757' :
+                hazard.severity === 'medium' ? '#ffa502' : '#2ecc71';
+
+            const marker = L.circleMarker([hazard.location.lat, hazard.location.lon], {
+                radius: 8,
+                fillColor: color,
+                color: 'white',
+                weight: 2,
+                fillOpacity: 0.8
+            });
+
+            marker.bindPopup(`
+                    <strong>${hazard.type}</strong><br>
+                    Severity: ${hazard.severity}<br>
+                    <small>${new Date(hazard.timestamp).toLocaleString()}</small>
+                `);
+
+            layers.hazards.addLayer(marker);
+        });
+    }
+
+    function toggleHeatMap() {
+        if (heatmapVisible) {
+            map.removeLayer(layers.heatmap);
+            heatmapVisible = false;
+        } else {
+            fetch('http://localhost:5000/api/analytics/heatmap')
+                .then(r => r.json())
+                .then(data => {
+                    layers.heatmap.clearLayers();
+                    data.heat_points.forEach(point => {
+                        const circle = L.circle([point.lat, point.lng], {
+                            radius: 200 * point.weight,
+                            color: '#ff4757',
+                            fillColor: '#ff4757',
+                            fillOpacity: 0.1 + (point.weight * 0.4),
+                            weight: 1
+                        });
+                        layers.heatmap.addLayer(circle);
+                    });
+                    map.addLayer(layers.heatmap);
+                    heatmapVisible = true;
+                });
+        }
+    }
+
+    function toggleVehicles() {
+        if (vehiclesVisible) {
+            map.removeLayer(layers.vehicles);
+            vehiclesVisible = false;
+        } else {
+            map.addLayer(layers.vehicles);
+            vehiclesVisible = true;
+        }
+    }
+
+    function refreshData() {
+        fetch('http://localhost:5000/api/analytics/metrics')
+            .then(r => r.json())
+            .then(data => updateMetrics(data));
+
+        fetch('http://localhost:5000/api/hazards')
+            .then(r => r.json())
+            .then(data => updateHazards(data));
+
+        updateCharts();
+
+        document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+    }
+
+    // WebSocket event handlers
+    socket.on('connect', function() {
+        refreshData();
+    });
+
+    socket.on('hazard_created', function(data) {
+        refreshData();
+    });
+
+    socket.on('hazard_deleted', function(data) {
+        refreshData();
+    });
+
+    socket.on('vehicle_update', function(data) {
+        if (vehiclesVisible && data.data.vehicles) {
+            layers.vehicles.clearLayers();
+            data.data.vehicles.forEach(vehicle => {
+                const marker = L.marker([vehicle.location.lat, vehicle.location.lon], {
+                    icon: L.divIcon({
+                        className: 'custom-icon',
+                        html: `<div style="background: ${vehicle.color}; transform: rotate(${vehicle.heading}deg); padding: 2px; border-radius: 50%;">${vehicle.icon}</div>`
+                    })
+                });
+                marker.bindPopup(`${vehicle.icon} Vehicle ${vehicle.id}<br>Type: ${vehicle.type}`);
+                layers.vehicles.addLayer(marker);
+            });
+        }
+    });
+
+    socket.on('stats_update', function(data) {
+        document.getElementById('connectedUsers').textContent = data.data.connected_users || 'N/A';
+    });
+
+    // Initialize dashboard
+    refreshData();
+
+    // Auto-refresh every 30 seconds
+    setInterval(refreshData, 30000);
+</script>
+</body>
+</html>
